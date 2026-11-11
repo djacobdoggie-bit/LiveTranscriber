@@ -8,6 +8,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+env:
+  SHERPA_VERSION: '2.0.1'   # must match the Kotlin files in app/src/main/java/com/k2fsa
+  WHISPER_MODEL: 'small'
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,17 +31,62 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      # Speech models + native libraries are big, so reuse them between builds
+      - name: Restore speech models from cache
+        id: models
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/src/main/assets
+            app/src/main/jniLibs
+          key: models-sherpa-${{ env.SHERPA_VERSION }}-whisper-${{ env.WHISPER_MODEL }}-v1
+
+      - name: Download sherpa-onnx native libraries
+        if: steps.models.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          mkdir -p dl && cd dl
+          echo "Android assets in sherpa-onnx v${SHERPA_VERSION}:"
+          gh release view "v${SHERPA_VERSION}" -R k2-fsa/sherpa-onnx --json assets -q '.assets[].name' | grep -i android || true
+          ASSET=$(gh release view "v${SHERPA_VERSION}" -R k2-fsa/sherpa-onnx --json assets -q '.assets[].name' \
+                  | grep -E '^sherpa-onnx-v?[0-9.]+-android\.tar\.bz2$' | head -n1)
+          if [ -z "$ASSET" ]; then echo "Could not find the Android library package"; exit 1; fi
+          echo "Using $ASSET"
+          gh release download "v${SHERPA_VERSION}" -R k2-fsa/sherpa-onnx -p "$ASSET"
+          tar xjf "$ASSET"
+          JNI=$(find . -path '*arm64-v8a*' -name 'libsherpa-onnx-jni.so' | head -n1)
+          if [ -z "$JNI" ]; then echo "libsherpa-onnx-jni.so not found"; find . -name '*.so' | head -50; exit 1; fi
+          mkdir -p ../app/src/main/jniLibs/arm64-v8a
+          cp "$(dirname "$JNI")"/*.so ../app/src/main/jniLibs/arm64-v8a/
+          ls -la ../app/src/main/jniLibs/arm64-v8a
+
+      - name: Download Whisper and voice-detector models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          mkdir -p dl app/src/main/assets/whisper
+          cd dl
+          curl -fSL -o whisper.tar.bz2 \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-${WHISPER_MODEL}.tar.bz2"
+          tar xjf whisper.tar.bz2
+          D="sherpa-onnx-whisper-${WHISPER_MODEL}"
+          ls -la "$D"
+          cp "$(find "$D" -name '*-encoder.int8.onnx' | head -n1)" ../app/src/main/assets/whisper/encoder.int8.onnx
+          cp "$(find "$D" -name '*-decoder.int8.onnx' | head -n1)" ../app/src/main/assets/whisper/decoder.int8.onnx
+          cp "$(find "$D" -name '*tokens.txt' | head -n1)"        ../app/src/main/assets/whisper/tokens.txt
+          curl -fSL -o ../app/src/main/assets/silero_vad.onnx \
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
+          ls -laR ../app/src/main/assets
+
       - name: Build the app
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk LiveTranscriber.apk
-
-      - name: Save APK as a build file
-        uses: actions/upload-artifact@v4
-        with:
-          name: LiveTranscriber-apk
-          path: LiveTranscriber.apk
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk LiveTranscriber.apk
+          ls -la LiveTranscriber.apk
 
       - name: Publish APK to the "latest" release (easy phone download)
         env:
@@ -42,4 +95,4 @@ jobs:
           gh release delete latest --yes --cleanup-tag || true
           gh release create latest LiveTranscriber.apk \
             --title "Live Transcriber (latest build)" \
-            --notes "Download LiveTranscriber.apk on your Android phone and open it to install."
+            --notes "Offline Whisper version. Download LiveTranscriber.apk on your Android phone and open it to install."
