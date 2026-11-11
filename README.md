@@ -1,6 +1,8 @@
 # Live Transcriber (Android)
 
-Offline, real-time speech-to-text. Tap **Start**, it transcribes what the mic hears live; tap **Stop**, it saves a timestamped `.txt` file to `Downloads/LiveTranscriber` on your phone.
+Offline, real-time speech-to-text with **Whisper built into the app** (Tagalog, Taglish, English). No language packs or internet needed. Tap **Start**, it transcribes each phrase as people speak; tap **Stop**, it saves a timestamped `.txt` file to `Downloads/LiveTranscriber` on your phone.
+
+The GitHub build downloads the Whisper "small" model and the sherpa-onnx engine and packs them into the APK (~400 MB).
 
 ## Get the APK (GitHub builds it for free)
 
@@ -14,16 +16,9 @@ Offline, real-time speech-to-text. Tap **Start**, it transcribes what the mic he
 
 Open the downloaded APK. Android will ask you to allow installs from your browser or Files app — allow it, then tap **Install**. (Play Protect may warn that the app is unknown; choose to install anyway.)
 
-## Make it work offline (one-time)
-
-The app uses your phone's own speech engine. Download the offline language once while you have internet:
-
-- **Settings → search "offline speech" or "voice typing"**, or open **Gboard settings → Voice typing → Offline speech recognition**, then download **Filipino** (and **English** if you want).
-- On newer phones the app also asks Android to download the language automatically the first time.
-- Test it with **Airplane mode on**.
-
 ## Notes
 
 - Keep the app open while recording; the screen stays on automatically.
-- The phone's engine pauses briefly after long silences and restarts by itself, so a word can occasionally be missed at the very start of a sentence.
+- Text appears a phrase at a time, 1–3 seconds after each pause.
+- The first launch takes a few seconds to load the model.
 - Files are in **Downloads/LiveTranscriber**; the **Share** button sends the latest one.
